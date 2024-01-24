@@ -1,0 +1,37 @@
+#!/bin/sh
+
+set -e
+
+# look through pushed commits for a change in the Puppetfile
+while read -r oldrev newrev _; do
+    # for a new branch oldrev is 0{40}, set oldrev to the commit where we branched off the parent
+    if [ "$oldrev" = "0000000000000000000000000000000000000000" ]; then
+      oldrev=$(git rev-list --boundary "$newrev" --not --all | sed -n 's/^-//p')
+    fi
+
+    if [ "$oldrev" = '' ]; then
+        # special case: initial commit, list all files
+        if git ls-tree --full-tree -r HEAD --name-only | grep -q Puppetfile ; then
+            run_g10k
+        fi
+    else
+        # normal case: list changed files
+        if git diff --name-only "$oldrev" "$newrev" --diff-filter=ACM | grep -q Puppetfile ; then
+            run_g10k
+        fi
+    fi
+done
+
+run_g10k() {
+    # we're in GIT_DIR, which is WORKTREE/.git/ in non-bare repos, go to
+    # the working tree
+    cd ..
+    # for some reason, -cachedir doesn't change the "forgecachedir"
+    # setting, but this does
+    export g10k_cachedir="$PWD/.g10k"
+
+    echo "Puppetfile modified, running g10k..."
+    g10k -puppetfile -moduledir modules/
+    # we do not need to run it again
+    exit $?
+}
